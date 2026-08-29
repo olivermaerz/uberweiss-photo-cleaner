@@ -1,6 +1,6 @@
 # Überweiss Photo Cleaner
 
-App to review **exact** and **similar** duplicates in a photo folder. It does not depend on anything in `scripts/`.
+App to review **exact** and **similar** duplicates in a photo folder.
 
 <p align="center">
   <img src="images/logo-readme.png" alt="Überweiss Photo Cleaner" width="320">
