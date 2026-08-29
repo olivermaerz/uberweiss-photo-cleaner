@@ -59,6 +59,78 @@ class EngineTests(unittest.TestCase):
             )
             self.assertIn("Screenshot walk.png", clustered)
 
+    def test_partial_trash_dismisses_leftover_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_jpeg(root / "shot.jpg", (40, 80, 180))
+            write_jpeg(root / "shot copy.jpg", (40, 80, 180))
+            write_jpeg(root / "shot (1).jpg", (40, 80, 180))
+            write_jpeg(root / "solo.jpg", (10, 200, 10))
+            write_jpeg(root / "solo copy.jpg", (10, 200, 10))
+
+            engine = Engine(root=root, threshold=8, cache_dir=root / "_photo_cleaner")
+            engine.run()
+            self.assertEqual(len(engine.exact_groups), 2)
+
+            triple = next(g for g in engine.exact_groups if len(g.files) == 3)
+            extra = next(f for f in triple.files if f.id != triple.keeper_id)
+            leftover_ids = {f.id for f in triple.files if f.id != extra.id}
+
+            engine.remove_files([extra.id])
+
+            remaining_names = {f.name for g in engine.exact_groups for f in g.files}
+            self.assertEqual(remaining_names, {"solo.jpg", "solo copy.jpg"})
+            self.assertEqual(engine.dismissed_ids, leftover_ids)
+            self.assertTrue(leftover_ids.issubset(engine.files))
+            browsed, _total = engine.browse_other(None, 0, 60)
+            self.assertTrue(leftover_ids.isdisjoint({f.id for f in browsed}))
+
+    def test_partial_trash_dismisses_other_screenshot_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / "Screenshot walk.png"
+            similar = root / "Screenshot walk-small.png"
+            write_pattern(original, (160, 100), quality=95)
+            write_pattern(similar, (80, 50), quality=40)
+
+            engine = Engine(root=root, threshold=10, cache_dir=root / "_photo_cleaner")
+            engine.run()
+            self.assertEqual(len(engine.other_groups), 1)
+            group = engine.other_groups[0]
+            extra = next(f for f in group.files if f.id != group.keeper_id)
+            leftover_ids = {f.id for f in group.files if f.id != extra.id}
+
+            engine.remove_files([extra.id])
+
+            self.assertEqual(engine.other_groups, [])
+            self.assertEqual(engine.dismissed_ids, leftover_ids)
+            browsed, _total = engine.browse_other("screenshot", 0, 60)
+            self.assertTrue(leftover_ids.isdisjoint({f.id for f in browsed}))
+
+    def test_partial_trash_dismisses_ungrouped_screenshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_jpeg(root / "Screenshot red.png", (220, 20, 20), (200, 120))
+            write_pattern(root / "Screenshot noise.png", (160, 100))
+
+            engine = Engine(root=root, threshold=0, cache_dir=root / "_photo_cleaner")
+            engine.run()
+            self.assertEqual(engine.other_groups, [])
+            browsed, total = engine.browse_other("screenshot", 0, 60)
+            self.assertEqual(total, 2)
+            self.assertEqual(len(browsed), 2)
+
+            trash = browsed[0]
+            keep = browsed[1]
+            engine.remove_files([trash.id])
+            engine.dismiss_review([keep.id])
+
+            again, again_total = engine.browse_other("screenshot", 0, 60)
+            self.assertEqual(again_total, 0)
+            self.assertEqual(again, [])
+            self.assertIn(keep.id, engine.files)
+            self.assertIn(keep.id, engine.dismissed_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
