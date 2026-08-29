@@ -174,6 +174,13 @@ function renderStatus(s) {
   $("tab-similar").classList.toggle("is-ready", !!s.similar_ready);
   $("tab-other").classList.toggle("is-wait", !s.similar_ready);
   $("tab-other").classList.toggle("is-ready", !!s.similar_ready);
+  renderKept(s);
+}
+
+function renderKept(s) {
+  const n = s?.kept_count || 0;
+  $("kept-count").textContent = n === 1 ? "1 kept" : `${n} kept`;
+  $("kept-reset").disabled = n === 0 || !!document.body.classList.contains("is-busy");
 }
 
 function card(file, { group = null } = {}) {
@@ -597,6 +604,36 @@ function openModal() {
   $("modal").hidden = false;
 }
 
+function openKeptModal() {
+  const n = state.status?.kept_count || 0;
+  if (!n) return;
+  $("kept-modal-copy").textContent =
+    `Bring ${n} kept file${n === 1 ? "" : "s"} back into review? They will show up again on Exact, Similar, and Other.`;
+  $("kept-modal").hidden = false;
+}
+
+async function confirmResetKept() {
+  $("kept-go").disabled = true;
+  try {
+    const s = await api("/api/reset-kept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    $("kept-modal").hidden = true;
+    renderStatus(s);
+    state.groups = { exact: [], similar: [], other: [] };
+    state.offset = { exact: 0, similar: 0, other: 0 };
+    state.offsetStack = { exact: [], similar: [], other: [] };
+    await loadGroups(true);
+    if (state.tab === "other") await loadBrowse(true);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    $("kept-go").disabled = false;
+  }
+}
+
 function leftoverBrowseIds(trashedIds) {
   const trashed = new Set(trashedIds);
   const browseIds = state.browse.files.map((f) => f.id);
@@ -708,6 +745,9 @@ function bind() {
   $("trash-btn").addEventListener("click", openModal);
   $("modal-cancel").addEventListener("click", () => ($("modal").hidden = true));
   $("modal-go").addEventListener("click", confirmTrash);
+  $("kept-reset").addEventListener("click", openKeptModal);
+  $("kept-cancel").addEventListener("click", () => ($("kept-modal").hidden = true));
+  $("kept-go").addEventListener("click", confirmResetKept);
   $("lb-close").addEventListener("click", () => ($("lightbox").hidden = true));
   $("lightbox").addEventListener("click", (ev) => {
     if (ev.target.id === "lightbox") $("lightbox").hidden = true;
@@ -723,6 +763,7 @@ function bind() {
     if (ev.key === "Escape") {
       $("lightbox").hidden = true;
       $("modal").hidden = true;
+      $("kept-modal").hidden = true;
     }
   });
   bindMarquee();

@@ -35,13 +35,13 @@ pip install -e .
 ## Run
 
 ```bash
-photo-cleaner --root "/Volumes/Twenty/Pictures"
+photo-cleaner --root "/path/to/folder"
 ```
 
 Or:
 
 ```bash
-python3 -m photo_cleaner --root "/Volumes/Twenty/Pictures"
+python3 -m photo_cleaner --root "/path/to/folder"
 ```
 
 Then use the browser UI (default [http://127.0.0.1:8765/](http://127.0.0.1:8765/)).
@@ -77,7 +77,7 @@ Click **Finder** on a card to reveal the original in Finder.
 - **Similar:** JPEG thumbnail, then a perceptual hash. Groups with a camera photo, or mixed kinds (screenshot + other), land on Similar. Groups that are all screenshots or all other stills land on Other.
 - **Class:** camera `Make`/`Model` + shot time → photo; filename `Screenshot` / `Screen Shot` / iOS `IMG_1234.PNG` → screenshot; remaining stills → other.
 
-The folder `_photo_cleaner` is skipped on later scans. Delete it to rebuild the index.
+The folder `_photo_cleaner` stores SHA-256, perceptual hashes, thumbnails, and files you already reviewed. Later runs reuse that index and skip leftovers you left unchecked after Trash. **Review kept…** in the toolbar brings those files back. Delete the folder to rebuild and see everything again.
 
 ## Tests
 
