@@ -9,16 +9,17 @@ const state = {
   pageFiles: { exact: 0, similar: 0, other: 0 },
   pageCapped: { exact: false, similar: false, other: false },
   selected: new Set(),
+  anchorId: null,
   browse: { kind: "all", offset: 0, total: 0, files: [] },
 };
 
 const HINTS = {
   exact:
-    "Byte-identical files. Suggested copies are safe to remove after a glance. The keeper stays unless you check it.",
+    "Byte-identical files. Suggested copies are safe to remove after a glance. Drag a box to select several, or click the card (not the photo). The keeper stays unless you check it.",
   similar:
-    "Visually similar stills, including screenshots that match a photo. Nothing is pre-checked. Distance is Hamming bits from the keeper.",
+    "Visually similar stills, including screenshots that match a photo. Nothing is pre-checked. Drag a box or Shift-click a range. Distance is Hamming bits from the keeper.",
   other:
-    "Screenshots and other non-camera stills that are similar to each other, plus a grid of leftovers. Movies stay on Exact only.",
+    "Screenshots and other non-camera stills that are similar to each other, plus a grid of leftovers. Drag a box to select, Shift-click a range, or Select all in grid. Click a photo to zoom.",
 };
 
 const PHASE_TO_STAGE = {
@@ -177,32 +178,62 @@ function renderStatus(s) {
 
 function card(file, { group = null } = {}) {
   const selected = state.selected.has(file.id);
-  const node = el("article", { class: `card${file.keep ? " is-keep" : ""}${selected ? " is-sel" : ""}` });
-  const thumb = el("div", { class: "thumb", onclick: () => openLightbox(file) });
+  const node = el("article", {
+    class: `card${file.keep ? " is-keep" : ""}${selected ? " is-sel" : ""}`,
+    "data-id": String(file.id),
+  });
+  if (file.keep) node.dataset.keep = "1";
+  const check = el("input", {
+    type: "checkbox",
+    checked: selected,
+    "aria-label": `Select ${file.name}`,
+    onchange: (ev) => {
+      toggleSel(file.id, ev.target.checked);
+      node.classList.toggle("is-sel", ev.target.checked);
+      state.anchorId = file.id;
+    },
+  });
+  const pick = el("label", { class: "pick", title: "Select to trash" });
+  pick.append(check);
+  pick.addEventListener("click", (ev) => ev.stopPropagation());
+  pick.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  const thumb = el("div", {
+    class: "thumb",
+    onclick: (ev) => {
+      if (ev.target.closest(".pick")) return;
+      if (ev.shiftKey) {
+        ev.preventDefault();
+        selectRangeTo(file.id);
+        return;
+      }
+      if (ev.metaKey || ev.ctrlKey) {
+        ev.preventDefault();
+        const on = !state.selected.has(file.id);
+        toggleSel(file.id, on);
+        syncCard(node);
+        state.anchorId = file.id;
+        return;
+      }
+      openLightbox(file);
+    },
+  });
   const img = el("img", {
     alt: file.name,
     loading: "lazy",
     src: file.thumb,
+    draggable: "false",
   });
   img.addEventListener("error", () => {
-    thumb.textContent = file.ext.replace(".", "").toUpperCase() || "FILE";
     img.remove();
+    thumb.append(file.ext.replace(".", "").toUpperCase() || "FILE");
   });
-  thumb.append(img);
+  thumb.append(img, pick);
   const badges = el("div", { class: "badges" });
   if (file.keep) badges.append(el("span", { class: "badge keep" }, "keep"));
   badges.append(el("span", { class: `badge ${file.kind}` }, file.kind.replace("_", " ")));
   if (group && group.tab !== "exact" && file.distance != null) {
     badges.append(el("span", { class: "badge" }, `d=${file.distance}`));
   }
-  const check = el("input", {
-    type: "checkbox",
-    checked: selected,
-    onchange: (ev) => {
-      toggleSel(file.id, ev.target.checked);
-      node.classList.toggle("is-sel", ev.target.checked);
-    },
-  });
   node.append(
     thumb,
     el(
@@ -215,12 +246,7 @@ function card(file, { group = null } = {}) {
         "div",
         { class: "row-actions" },
         el("span", {}, `${file.size_label}${file.shot_time ? " · " + file.shot_time : ""}`),
-        el(
-          "span",
-          {},
-          check,
-          el("button", { class: "ghost", type: "button", onclick: () => reveal(file.id) }, "Finder")
-        )
+        el("button", { class: "ghost", type: "button", onclick: () => reveal(file.id) }, "Finder")
       )
     )
   );
@@ -231,6 +257,166 @@ function toggleSel(id, on) {
   if (on) state.selected.add(id);
   else state.selected.delete(id);
   updateSel();
+}
+
+function syncCard(node) {
+  const id = Number(node.dataset.id);
+  const on = state.selected.has(id);
+  node.classList.toggle("is-sel", on);
+  const cb = node.querySelector("input[type=checkbox]");
+  if (cb) cb.checked = on;
+}
+
+function syncAllCards() {
+  document.querySelectorAll(".card[data-id]").forEach(syncCard);
+  updateSel();
+}
+
+function visibleCardNodes() {
+  return [...document.querySelectorAll(".card[data-id]")];
+}
+
+function selectRangeTo(id) {
+  const ids = visibleCardNodes().map((n) => Number(n.dataset.id));
+  const end = ids.indexOf(id);
+  const start = state.anchorId != null ? ids.indexOf(state.anchorId) : -1;
+  if (start < 0 || end < 0) state.selected.add(id);
+  else {
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
+    for (let i = lo; i <= hi; i++) state.selected.add(ids[i]);
+  }
+  state.anchorId = id;
+  syncAllCards();
+}
+
+function selectGroupFiles(group) {
+  for (const file of group.files) {
+    if (!file.keep) state.selected.add(file.id);
+  }
+  $("select-suggested").checked = false;
+  syncAllCards();
+}
+
+function selectVisible() {
+  for (const node of visibleCardNodes()) {
+    if (node.dataset.keep === "1") continue;
+    state.selected.add(Number(node.dataset.id));
+  }
+  $("select-suggested").checked = false;
+  syncAllCards();
+}
+
+function selectBrowseGrid() {
+  for (const file of state.browse.files) state.selected.add(file.id);
+  $("select-suggested").checked = false;
+  syncAllCards();
+}
+
+function cardVisibleRect(node) {
+  const r = node.getBoundingClientRect();
+  const parent = node.parentElement;
+  if (!parent) return r;
+  const p = parent.getBoundingClientRect();
+  const left = Math.max(r.left, p.left);
+  const top = Math.max(r.top, p.top);
+  const right = Math.min(r.right, p.right);
+  const bottom = Math.min(r.bottom, p.bottom);
+  if (right <= left || bottom <= top) return null;
+  return { left, top, right, bottom };
+}
+
+function marqueeHits(box) {
+  const hits = [];
+  for (const node of visibleCardNodes()) {
+    const r = cardVisibleRect(node);
+    if (!r) continue;
+    if (r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top) {
+      hits.push(Number(node.dataset.id));
+    }
+  }
+  return hits;
+}
+
+function swallowNextClick() {
+  const swallow = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    document.removeEventListener("click", swallow, true);
+  };
+  document.addEventListener("click", swallow, true);
+  setTimeout(() => document.removeEventListener("click", swallow, true), 400);
+}
+
+function bindMarquee() {
+  const skip = ".modal, .lightbox, header, .work, .tabs, .toolbar, .chips, button, select, a, input, .pick";
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest(skip)) return;
+    if (!e.target.closest("#board, #browse-wrap")) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startCard = e.target.closest(".card");
+    const onThumb = !!e.target.closest(".thumb");
+    const subtract = e.altKey;
+    const origin = new Set(state.selected);
+    let dragged = false;
+    let box = null;
+
+    const paint = (ev) => {
+      const x = Math.min(startX, ev.clientX);
+      const y = Math.min(startY, ev.clientY);
+      const w = Math.abs(ev.clientX - startX);
+      const h = Math.abs(ev.clientY - startY);
+      Object.assign(box.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+      const hits = marqueeHits({ left: x, top: y, right: x + w, bottom: y + h });
+      state.selected.clear();
+      for (const id of origin) state.selected.add(id);
+      for (const id of hits) {
+        if (subtract) state.selected.delete(id);
+        else state.selected.add(id);
+      }
+      syncAllCards();
+    };
+
+    const onMove = (ev) => {
+      const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+      if (!dragged && dist < 8) return;
+      if (!dragged) {
+        dragged = true;
+        document.body.classList.add("is-marquee");
+        box = el("div", { class: "marquee" });
+        document.body.append(box);
+      }
+      ev.preventDefault();
+      paint(ev);
+    };
+
+    const onUp = (ev) => {
+      document.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      box?.remove();
+      document.body.classList.remove("is-marquee");
+      if (dragged) {
+        swallowNextClick();
+        const hover = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(".card");
+        if (hover) state.anchorId = Number(hover.dataset.id);
+        return;
+      }
+      if (!startCard || onThumb) return;
+      const id = Number(startCard.dataset.id);
+      if (e.shiftKey || ev.shiftKey) selectRangeTo(id);
+      else {
+        toggleSel(id, !state.selected.has(id));
+        syncCard(startCard);
+        state.anchorId = id;
+      }
+    };
+
+    document.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
 }
 
 function updateSel() {
@@ -268,7 +454,16 @@ function renderBoard() {
             "div",
             { class: "group-head" },
             el("span", {}, `${group.reason}${group.tab !== "exact" ? ` · max distance ${group.distance}` : ""}`),
-            el("span", {}, formatWaste(`${group.files.length} files`, group.waste_bytes))
+            el(
+              "span",
+              { class: "group-tools" },
+              el("span", {}, formatWaste(`${group.files.length} files`, group.waste_bytes)),
+              el(
+                "button",
+                { class: "ghost", type: "button", onclick: () => selectGroupFiles(group) },
+                "Select extras"
+              )
+            )
           ),
           el("div", { class: "cards" }, ...group.files.map((f) => card(f, { group })))
         )
@@ -473,11 +668,13 @@ function bind() {
     });
   });
   $("select-suggested").addEventListener("change", (ev) => selectSuggested(ev.target.checked));
+  $("select-visible").addEventListener("click", selectVisible);
+  $("browse-select").addEventListener("click", selectBrowseGrid);
   $("clear-sel").addEventListener("click", () => {
     state.selected.clear();
+    state.anchorId = null;
     $("select-suggested").checked = false;
-    updateSel();
-    renderBoard();
+    syncAllCards();
   });
   $("page-size").addEventListener("change", async (ev) => {
     state.pageSize = Number(ev.target.value) || 30;
@@ -520,6 +717,7 @@ function bind() {
       $("modal").hidden = true;
     }
   });
+  bindMarquee();
 }
 
 bind();
