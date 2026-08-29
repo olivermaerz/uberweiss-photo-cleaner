@@ -1,4 +1,5 @@
 # Überweiss Photo Cleaner
+## Uberweiss. It's new, it's German, it's extra-tough.
 
 App to review **exact** and **similar** duplicates in a photo folder.
 
