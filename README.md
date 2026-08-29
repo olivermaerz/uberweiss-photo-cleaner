@@ -1,11 +1,12 @@
 # Überweiss Photo Cleaner
-## Uberweiss. It's new, it's German, it's extra-tough.
-
-App to review **exact** and **similar** duplicates in a photo folder.
-
+## It's new, it's German, it's extra-tough.
 <p align="center">
   <img src="images/logo-readme.png" alt="Überweiss Photo Cleaner" width="320">
 </p>
+
+App to review **exact** and **similar** duplicates in a photo folder.
+
+
 
 A small web server binds to `127.0.0.1` and opens a three-tab UI:
 
