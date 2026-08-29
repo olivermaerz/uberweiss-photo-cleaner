@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Überweiss Photo Cleaner</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img
+        class="logo"
+        src="/static/logo.png"
+        srcset="/static/logo.png 1x, /static/logo@2x.png 2x"
+        width="104"
+        height="128"
+        alt="Überweiss Photo Cleaner"
+      >
+      <div>
+        <h1>Überweiss Photo Cleaner</h1>
+        <p class="root" id="root-path">Scanning…</p>
+      </div>
+    </div>
+  </header>
+
+  <section class="work is-busy" id="work" aria-live="polite" aria-busy="true">
+    <div class="work-head">
+      <span class="work-flag" id="work-flag">
+        <span class="pulse" aria-hidden="true"></span>
+        <span id="work-label">Working</span>
+      </span>
+      <span class="work-phase" id="scan-phase">starting</span>
+      <span class="work-msg" id="scan-msg">Waiting…</span>
+      <span class="work-pct" id="scan-pct"></span>
+    </div>
+    <div class="bar" aria-hidden="true"><span id="scan-bar"></span></div>
+    <ol class="stages" id="stages">
+      <li data-stage="scan">Scan</li>
+      <li data-stage="metadata">Metadata</li>
+      <li data-stage="exact">Exact</li>
+      <li data-stage="similar">Similar</li>
+    </ol>
+    <p class="work-ready" id="work-ready">Indexing in the background. Tabs unlock as each stage finishes.</p>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Duplicate review">
+    <button class="tab is-on is-wait" role="tab" id="tab-exact" aria-selected="true" aria-controls="review-panel" data-tab="exact" type="button">
+      Exact <em id="count-exact">—</em>
+    </button>
+    <button class="tab is-wait" role="tab" id="tab-similar" aria-selected="false" aria-controls="review-panel" data-tab="similar" type="button">
+      Similar <em id="count-similar">—</em>
+    </button>
+    <button class="tab is-wait" role="tab" id="tab-other" aria-selected="false" aria-controls="review-panel" data-tab="other" type="button">
+      Other <em id="count-other">—</em>
+    </button>
+  </nav>
+
+  <div id="review-panel" role="tabpanel" aria-labelledby="tab-exact">
+  <section class="hint" id="tab-hint"></section>
+
+  <div class="toolbar">
+    <label class="check">
+      <input type="checkbox" id="select-suggested">
+      <span id="suggest-text">Select suggested copies</span>
+    </label>
+    <button type="button" class="ghost" id="clear-sel">Clear</button>
+    <label class="page-size">
+      Show
+      <select id="page-size" aria-label="Groups per page">
+        <option value="30" selected>30</option>
+        <option value="60">60</option>
+        <option value="90">90</option>
+        <option value="180">180</option>
+      </select>
+      groups
+    </label>
+    <button type="button" class="ghost" id="page-prev" hidden>Previous</button>
+    <button type="button" class="ghost" id="page-next" hidden>Next</button>
+    <span class="page-info" id="page-info"></span>
+    <span class="spacer"></span>
+    <span class="sel-count" id="sel-count">0 selected</span>
+    <button type="button" class="danger" id="trash-btn" disabled>Move to Trash…</button>
+  </div>
+
+  <main id="board"></main>
+
+  <section class="browse" id="browse-wrap" hidden>
+    <div class="browse-head">
+      <h2>Ungrouped stills</h2>
+      <div class="chips">
+        <button type="button" class="chip is-on" data-kind="all">All</button>
+        <button type="button" class="chip" data-kind="screenshot">Screenshots</button>
+        <button type="button" class="chip" data-kind="other">Other</button>
+      </div>
+      <span id="browse-total"></span>
+    </div>
+    <div class="grid" id="browse-grid"></div>
+    <button type="button" class="ghost" id="browse-more" hidden>Load more</button>
+  </section>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="sheet">
+      <h2>Move to Trash?</h2>
+      <p id="modal-copy"></p>
+      <ul id="modal-list"></ul>
+      <p class="fine">Files go to Trash (including on external volumes). This does not skip the keeper unless you checked it.</p>
+      <div class="row">
+        <button type="button" class="ghost" id="modal-cancel">Cancel</button>
+        <button type="button" class="danger" id="modal-go">Move to Trash</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="ghost close" id="lb-close">Close</button>
+    <img id="lb-img" alt="">
+    <div class="lb-meta" id="lb-meta"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

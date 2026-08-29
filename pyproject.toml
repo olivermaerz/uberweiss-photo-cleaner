@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uberweiss-photo-cleaner"
+version = "0.1.0"
+description = "Local web UI to review exact and similar photo duplicates"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0.0",
+    "send2trash>=1.8.3",
+]
+
+[project.scripts]
+photo-cleaner = "photo_cleaner.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["photo_cleaner*"]
+
+[tool.setuptools.package-data]
+photo_cleaner = ["static/*"]
