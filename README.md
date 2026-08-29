@@ -83,11 +83,3 @@ The folder `_photo_cleaner` is skipped on later scans. Delete it to rebuild the 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-
-## Logo
-
-Packaging art is in `images/` (source JPEG + README PNG with a transparent studio background). Web sizes live in `photo_cleaner/static/`. Rebuild with:
-
-```bash
-python3 tools/prepare_logo.py --source images/uberweiss-source.jpg
-```
