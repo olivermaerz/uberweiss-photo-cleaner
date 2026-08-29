@@ -1,14 +1,13 @@
 # Überweiss Photo Cleaner
-## It's new, it's German, it's extra-tough.
+It's new, it's German, it's extra-tough.
+
 <p align="center">
   <img src="images/logo-readme.png" alt="Überweiss Photo Cleaner" width="320">
 </p>
 
-App to review **exact** and **similar** duplicates in a photo folder.
+## Clean your photo folder and get rid of duplicates, screenshots, etc.
 
-
-
-A small web server binds to `127.0.0.1` and opens a three-tab UI:
+This is an app to review **exact** and **similar** duplicates in a photo folder. It runs a small web server on your local computer that binds to `127.0.0.1` and opens a three-tab UI:
 
 | Tab | What it shows | Deleting |
 |-----|----------------|----------|
@@ -70,12 +69,12 @@ Stop with Ctrl+C.
 
 Nothing is deleted until you confirm in the dialog. Files go to **Trash**, including on external volumes (`/Volumes/…/.Trashes`).
 
-**Finder** on a card reveals the original in Finder.
+Click **Finder** on a card to reveal the original in Finder.
 
 ## How matching works
 
 - **Exact:** group by size, then SHA-256. Keeper prefers fewer `copy` / `(1)` / `__2` markers, shallower path, shorter name, older mtime.
-- **Similar:** JPEG thumbnail, then a perceptual hash. Groups that contain at least one camera photo land on Similar (so a screenshot can sit next to the photo). Groups with only screenshots/other stills land on Other.
+- **Similar:** JPEG thumbnail, then a perceptual hash. Groups with a camera photo, or mixed kinds (screenshot + other), land on Similar. Groups that are all screenshots or all other stills land on Other.
 - **Class:** camera `Make`/`Model` + shot time → photo; filename `Screenshot` / `Screen Shot` / iOS `IMG_1234.PNG` → screenshot; remaining stills → other.
 
 The folder `_photo_cleaner` is skipped on later scans. Delete it to rebuild the index.
