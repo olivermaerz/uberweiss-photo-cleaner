@@ -749,7 +749,7 @@ function bind() {
   $("kept-cancel").addEventListener("click", () => ($("kept-modal").hidden = true));
   $("kept-go").addEventListener("click", confirmResetKept);
   $("lb-close").addEventListener("click", () => ($("lightbox").hidden = true));
-  $("lightbox").addEventListener("click", (ev) => {
+  $("lightbox")?.addEventListener("click", (ev) => {
     if (ev.target.id === "lightbox") $("lightbox").hidden = true;
   });
   document.querySelectorAll(".chip").forEach((chip) => {
