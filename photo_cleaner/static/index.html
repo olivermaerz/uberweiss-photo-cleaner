@@ -83,6 +83,10 @@
     <button type="button" class="ghost" id="page-prev" hidden>Previous</button>
     <button type="button" class="ghost" id="page-next" hidden>Next</button>
     <span class="page-info" id="page-info"></span>
+    <span class="kept" id="kept-wrap">
+      <span id="kept-count">0 kept</span>
+      <button type="button" class="ghost" id="kept-reset" disabled title="Show kept files in review again">Review kept…</button>
+    </span>
     <span class="spacer"></span>
     <span class="sel-count" id="sel-count">0 selected</span>
     <button type="button" class="danger" id="trash-btn" disabled>Move to Trash…</button>
@@ -119,7 +123,17 @@
     </div>
   </div>
 
-  <div class="lightbox" id="lightbox" hidden>
+  <div class="modal" id="kept-modal" hidden>
+    <div class="sheet">
+      <h2>Review kept files again?</h2>
+      <p id="kept-modal-copy"></p>
+      <p class="fine warn-note">This only puts them back on the list. Nothing is moved or deleted. You will see files you already decided to keep.</p>
+      <div class="row">
+        <button type="button" class="ghost" id="kept-cancel">Cancel</button>
+        <button type="button" class="warn" id="kept-go">Review kept files</button>
+      </div>
+    </div>
+  </div>
     <button type="button" class="ghost close" id="lb-close">Close</button>
     <img id="lb-img" alt="">
     <div class="lb-meta" id="lb-meta"></div>
