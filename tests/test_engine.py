@@ -6,7 +6,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from photo_cleaner.engine import Engine
+from photo_cleaner.engine import Engine, _split_star_clusters
+from photo_cleaner.hashes import hamming
+from photo_cleaner.media import KIND_PHOTO, MediaFile, similar_keep_score
 
 
 def write_jpeg(path: Path, color: tuple[int, int, int], size: tuple[int, int] = (80, 60)) -> None:
@@ -198,6 +200,37 @@ class EngineTests(unittest.TestCase):
                 self.assertTrue(leftover_names.isdisjoint(exact_names))
             finally:
                 engine2.close()
+
+    def test_star_split_breaks_transitive_blob(self) -> None:
+        root = Path("/tmp")
+
+        def fake(i: int, phash: int) -> MediaFile:
+            return MediaFile(
+                id=i,
+                path=Path(f"/tmp/{i:03d}.jpg"),
+                relpath=f"{i:03d}.jpg",
+                size=100,
+                mtime=0,
+                ext=".jpg",
+                kind=KIND_PHOTO,
+                phash=phash,
+            )
+
+        files = [fake(1, 0), fake(2, 1), fake(3, 3), fake(4, 0xFF00), fake(5, 0xFF01)]
+        chunks = _split_star_clusters(files, root, threshold=2)
+        self.assertEqual(len(chunks), 2)
+        for chunk in chunks:
+            keeper = max(chunk, key=lambda f: similar_keep_score(f, root))
+            self.assertLessEqual(len(chunk), 48)
+            for item in chunk:
+                if item.id == keeper.id:
+                    continue
+                self.assertLessEqual(hamming(int(keeper.phash), int(item.phash)), 2)
+
+        clones = [fake(i, 0) for i in range(20)]
+        packed = _split_star_clusters(clones, root, threshold=8, max_group=8)
+        self.assertTrue(all(len(chunk) <= 8 for chunk in packed))
+        self.assertEqual(sum(len(chunk) for chunk in packed), 20)
 
 
 if __name__ == "__main__":
