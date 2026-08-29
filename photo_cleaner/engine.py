@@ -668,46 +668,9 @@ class Engine:
             if len(members) < 2:
                 continue
             files = [stills[i] for i in members]
-            keeper = max(files, key=lambda f: similar_keep_score(f, self.root))
-            max_dist = 0
-            file_dist: dict[int, int] = {keeper.id: 0}
-            for item in files:
-                if item.id == keeper.id or keeper.phash is None or item.phash is None:
-                    continue
-                dist = hamming(keeper.phash, item.phash)
-                file_dist[item.id] = dist
-                max_dist = max(max_dist, dist)
-                item.extras["distance"] = dist
-            keeper.extras["distance"] = 0
-            deletes = []
-            for item in files:
-                if item.id == keeper.id:
-                    continue
-                dist = file_dist.get(item.id, max_dist)
-                if (
-                    dist <= 4
-                    and shot_times_close(keeper.shot_time, item.shot_time)
-                    and item.kind != KIND_PHOTO
-                ):
-                    deletes.append(item.id)
-                elif dist <= 2 and shot_times_close(keeper.shot_time, item.shot_time):
-                    deletes.append(item.id)
-            waste = sum(f.size for f in files if f.id != keeper.id)
-            kinds = {f.kind for f in files}
-            has_photo = KIND_PHOTO in kinds
-            mixed = len(kinds) > 1
-            tab = "similar" if has_photo or mixed else "other"
-            group = FileGroup(
-                id=f"{tab}:{keeper.id}",
-                tab=tab,
-                reason="Perceptual hash (visually similar)",
-                waste_bytes=waste,
-                distance=max_dist,
-                files=sorted(files, key=lambda f: (f.id != keeper.id, f.relpath.lower())),
-                keeper_id=keeper.id,
-                suggested_delete_ids=deletes,
-            )
-            (similar if tab == "similar" else other).append(group)
+            for chunk in _split_star_clusters(files, self.root, self.threshold):
+                group = _phash_file_group(chunk, self.root)
+                (similar if group.tab == "similar" else other).append(group)
 
         similar.sort(key=lambda g: g.waste_bytes, reverse=True)
         other.sort(key=lambda g: g.waste_bytes, reverse=True)
@@ -836,6 +799,84 @@ class Engine:
             self._conn.close()
         except sqlite3.Error:
             pass
+
+
+MAX_STAR_GROUP = 48
+
+
+def _split_star_clusters(
+    files: list[MediaFile],
+    root: Path,
+    threshold: int,
+    max_group: int = MAX_STAR_GROUP,
+) -> list[list[MediaFile]]:
+    """Break a transitive blob into neighborhoods around successive keepers."""
+    remaining = list(files)
+    packed: list[list[MediaFile]] = []
+    while len(remaining) >= 2:
+        keeper = max(remaining, key=lambda f: similar_keep_score(f, root))
+        if keeper.phash is None:
+            remaining = [f for f in remaining if f.id != keeper.id]
+            continue
+        scored: list[tuple[int, MediaFile]] = []
+        for item in remaining:
+            if item.id == keeper.id:
+                scored.append((0, item))
+                continue
+            if item.phash is None:
+                continue
+            dist = hamming(keeper.phash, item.phash)
+            if dist <= threshold:
+                scored.append((dist, item))
+        scored.sort(key=lambda pair: (pair[0], pair[1].relpath.lower()))
+        if len(scored) < 2:
+            remaining = [f for f in remaining if f.id != keeper.id]
+            continue
+        chosen = [item for _, item in scored[:max_group]]
+        packed.append(chosen)
+        chosen_ids = {item.id for item in chosen}
+        remaining = [item for item in remaining if item.id not in chosen_ids]
+    return packed
+
+
+def _phash_file_group(files: list[MediaFile], root: Path) -> FileGroup:
+    keeper = max(files, key=lambda f: similar_keep_score(f, root))
+    max_dist = 0
+    file_dist: dict[int, int] = {keeper.id: 0}
+    for item in files:
+        if item.id == keeper.id or keeper.phash is None or item.phash is None:
+            continue
+        dist = hamming(keeper.phash, item.phash)
+        file_dist[item.id] = dist
+        max_dist = max(max_dist, dist)
+        item.extras["distance"] = dist
+    keeper.extras["distance"] = 0
+    deletes = []
+    for item in files:
+        if item.id == keeper.id:
+            continue
+        dist = file_dist.get(item.id, max_dist)
+        if (
+            dist <= 4
+            and shot_times_close(keeper.shot_time, item.shot_time)
+            and item.kind != KIND_PHOTO
+        ):
+            deletes.append(item.id)
+        elif dist <= 2 and shot_times_close(keeper.shot_time, item.shot_time):
+            deletes.append(item.id)
+    waste = sum(f.size for f in files if f.id != keeper.id)
+    kinds = {f.kind for f in files}
+    tab = "similar" if KIND_PHOTO in kinds or len(kinds) > 1 else "other"
+    return FileGroup(
+        id=f"{tab}:{keeper.id}",
+        tab=tab,
+        reason="Perceptual hash (visually similar)",
+        waste_bytes=waste,
+        distance=max_dist,
+        files=sorted(files, key=lambda f: (f.id != keeper.id, file_dist.get(f.id, 99), f.relpath.lower())),
+        keeper_id=keeper.id,
+        suggested_delete_ids=deletes,
+    )
 
 
 def _strip_groups(groups: list[FileGroup], removed: set[int]) -> tuple[list[FileGroup], set[int]]:
