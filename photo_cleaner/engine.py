@@ -149,6 +149,7 @@ class Engine:
         self.exact_groups: list[FileGroup] = []
         self.similar_groups: list[FileGroup] = []
         self.other_groups: list[FileGroup] = []
+        self.dismissed_ids: set[int] = set()
         self._conn = _connect(self.cache_dir / "index.sqlite")
         self._db_lock = threading.Lock()
 
@@ -676,11 +677,12 @@ class Engine:
                 for item in group.files:
                     grouped_ids.add(item.id)
             files = list(self.files.values())
+            dismissed = set(self.dismissed_ids)
         wanted = []
         for item in files:
             if item.kind in {KIND_MOVIE, KIND_LIVE_VIDEO, KIND_PHOTO}:
                 continue
-            if item.id in grouped_ids:
+            if item.id in grouped_ids or item.id in dismissed:
                 continue
             if kind and item.kind != kind:
                 continue
@@ -707,9 +709,14 @@ class Engine:
                 thumb = self.thumb_path(item)
                 if thumb.exists():
                     thumb.unlink(missing_ok=True)
-            self.exact_groups = _strip_groups(self.exact_groups, id_set, self.root, exact=True)
-            self.similar_groups = _strip_groups(self.similar_groups, id_set, self.root, exact=False)
-            self.other_groups = _strip_groups(self.other_groups, id_set, self.root, exact=False)
+            exact, exact_left = _strip_groups(self.exact_groups, id_set)
+            similar, similar_left = _strip_groups(self.similar_groups, id_set)
+            other, other_left = _strip_groups(self.other_groups, id_set)
+            self.exact_groups = exact
+            self.similar_groups = similar
+            self.other_groups = other
+            self.dismissed_ids.update(exact_left | similar_left | other_left)
+            self.dismissed_ids -= id_set
         if paths:
             def drop() -> None:
                 self._conn.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in paths])
@@ -721,40 +728,24 @@ class Engine:
                 pass
         return removed
 
+    def dismiss_review(self, ids: list[int]) -> None:
+        """Keep files on disk but hide them from later review pages this session."""
+        id_set = {int(i) for i in ids}
+        with self.lock:
+            self.dismissed_ids.update(i for i in id_set if i in self.files)
 
-def _strip_groups(
-    groups: list[FileGroup], removed: set[int], root: Path, exact: bool
-) -> list[FileGroup]:
+
+def _strip_groups(groups: list[FileGroup], removed: set[int]) -> tuple[list[FileGroup], set[int]]:
+    """Drop groups that lost any member. Leftovers stay on disk but leave the review queue."""
     kept_groups = []
+    leftovers: set[int] = set()
     for group in groups:
-        files = [f for f in group.files if f.id not in removed]
-        if len(files) < 2:
+        remaining = [f for f in group.files if f.id not in removed]
+        if len(remaining) != len(group.files):
+            leftovers.update(f.id for f in remaining)
             continue
-        if group.keeper_id in removed:
-            if exact:
-                keeper = max(files, key=lambda f: keep_score(f.path, root))
-            else:
-                keeper = max(files, key=lambda f: similar_keep_score(f, root))
-        else:
-            keeper = next((f for f in files if f.id == group.keeper_id), files[0])
-        deletes = [fid for fid in group.suggested_delete_ids if fid not in removed and fid != keeper.id]
-        if exact:
-            deletes = [f.id for f in files if f.id != keeper.id]
-        waste = sum(f.size for f in files if f.id != keeper.id) if not exact else keeper.size * (len(files) - 1)
-        kept_groups.append(
-            FileGroup(
-                id=group.id,
-                tab=group.tab,
-                reason=group.reason,
-                waste_bytes=waste,
-                distance=group.distance,
-                files=sorted(files, key=lambda f: (f.id != keeper.id, f.relpath.lower())),
-                keeper_id=keeper.id,
-                suggested_delete_ids=deletes,
-            )
-        )
-    kept_groups.sort(key=lambda g: g.waste_bytes, reverse=True)
-    return kept_groups
+        kept_groups.append(group)
+    return kept_groups, leftovers
 
 
 def _exif_str(value) -> str | None:
