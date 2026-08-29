@@ -127,6 +127,9 @@ class CleanerHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/reveal":
                 self._handle_reveal(body)
                 return
+            if parsed.path == "/api/reset-kept":
+                self._handle_reset_kept(body)
+                return
             self._send_json({"error": "not found"}, 404)
         except Exception as exc:
             self._send_json({"error": str(exc)}, 500)
@@ -277,6 +280,15 @@ class CleanerHandler(BaseHTTPRequestHandler):
 
         subprocess.run(["open", "-R", str(item.path)], check=False)
         self._send_json({"ok": True})
+
+    def _handle_reset_kept(self, body: dict) -> None:
+        if not body.get("confirm"):
+            self._send_json({"error": "confirm required"}, 400)
+            return
+        cleared = self.engine.reset_kept()
+        payload = self.engine.snapshot()
+        payload["cleared"] = cleared
+        self._send_json(payload)
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)

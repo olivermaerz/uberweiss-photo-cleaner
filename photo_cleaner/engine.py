@@ -56,6 +56,15 @@ def _connect(db_path: Path) -> sqlite3.Connection:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dismissed (
+                    path TEXT PRIMARY KEY,
+                    size INTEGER NOT NULL,
+                    mtime REAL NOT NULL
+                )
+                """
+            )
             cols = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
             if "meta_checked" not in cols:
                 conn.execute("ALTER TABLE files ADD COLUMN meta_checked INTEGER DEFAULT 0")
@@ -212,6 +221,7 @@ class Engine:
                 "other_waste_bytes": other_waste,
                 "kinds": dict(kinds),
                 "threshold": self.threshold,
+                "kept_count": len(self.dismissed_ids),
             }
 
     def run(self) -> None:
@@ -303,6 +313,7 @@ class Engine:
         if stale:
             def drop_stale() -> None:
                 self._conn.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in stale])
+                self._conn.executemany("DELETE FROM dismissed WHERE path = ?", [(p,) for p in stale])
                 self._conn.commit()
 
             self._db_run(drop_stale)
@@ -314,10 +325,12 @@ class Engine:
             item.id = i
             files[i] = item
             path_to_id[str(item.path)] = i
+        dismissed_ids = self._restore_dismissed_ids(files, path_to_id)
 
         with self.lock:
             self.files = files
             self.path_to_id = path_to_id
+            self.dismissed_ids = dismissed_ids
         self.set_status("scanning", f"Indexed {len(files)} media files.", len(files), len(files))
 
     def _load_cache(self) -> dict[str, sqlite3.Row]:
@@ -362,6 +375,46 @@ class Engine:
                     meta_checked=excluded.meta_checked
                 """,
                 row,
+            )
+            self._conn.commit()
+
+        self._db_run(write)
+
+    def _restore_dismissed_ids(
+        self, files: dict[int, MediaFile], path_to_id: dict[str, int]
+    ) -> set[int]:
+        with self._db_lock:
+            rows = self._conn.execute("SELECT path, size, mtime FROM dismissed").fetchall()
+        ids: set[int] = set()
+        stale: list[str] = []
+        for row in rows:
+            path = row["path"]
+            fid = path_to_id.get(path)
+            if fid is None:
+                stale.append(path)
+                continue
+            item = files[fid]
+            if item.size != row["size"] or abs(item.mtime - row["mtime"]) >= 0.001:
+                stale.append(path)
+                continue
+            ids.add(fid)
+        if stale:
+            def drop() -> None:
+                self._conn.executemany("DELETE FROM dismissed WHERE path = ?", [(p,) for p in stale])
+                self._conn.commit()
+
+            self._db_run(drop)
+        return ids
+
+    def _persist_dismissed(self, items: list[MediaFile]) -> None:
+        rows = [(str(item.path), item.size, item.mtime) for item in items]
+        if not rows:
+            return
+
+        def write() -> None:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO dismissed (path, size, mtime) VALUES (?, ?, ?)",
+                rows,
             )
             self._conn.commit()
 
@@ -424,12 +477,15 @@ class Engine:
             by_size[item.size].append(item)
         candidates = {size: group for size, group in by_size.items() if len(group) > 1}
         to_hash = [f for group in candidates.values() for f in group if not f.sha256]
-        self.set_status(
-            "hashing",
-            f"SHA-256 hashing {len(to_hash)} possible exact duplicates…",
-            0,
-            max(len(to_hash), 1),
-        )
+        if to_hash:
+            self.set_status(
+                "hashing",
+                f"SHA-256 hashing {len(to_hash)} possible exact duplicates…",
+                0,
+                len(to_hash),
+            )
+        else:
+            self.set_status("hashing", "Reusing cached SHA-256 hashes.")
         hashed = 0
         for item in to_hash:
             if self.stop_event.is_set():
@@ -485,7 +541,7 @@ class Engine:
             )
         groups.sort(key=lambda g: g.waste_bytes, reverse=True)
         with self.lock:
-            self.exact_groups = groups
+            self.exact_groups = _hide_fully_dismissed(groups, self.dismissed_ids)
         self.set_status(
             "hashing",
             f"Found {len(groups)} exact duplicate groups ({format_bytes(sum(g.waste_bytes for g in groups))}).",
@@ -519,12 +575,15 @@ class Engine:
     def _thumbs_and_phash(self) -> None:
         stills = [f for f in self.files.values() if f.is_still]
         missing = [f for f in stills if f.phash is None]
-        self.set_status(
-            "similar",
-            f"Computing perceptual hashes for {len(missing)} stills…",
-            0,
-            max(len(missing), 1),
-        )
+        if missing:
+            self.set_status(
+                "similar",
+                f"Computing perceptual hashes for {len(missing)} stills…",
+                0,
+                len(missing),
+            )
+        else:
+            self.set_status("similar", "Reusing cached perceptual hashes.")
         done = 0
         for item in missing:
             if self.stop_event.is_set():
@@ -653,8 +712,9 @@ class Engine:
         similar.sort(key=lambda g: g.waste_bytes, reverse=True)
         other.sort(key=lambda g: g.waste_bytes, reverse=True)
         with self.lock:
-            self.similar_groups = similar
-            self.other_groups = other
+            dismissed = set(self.dismissed_ids)
+            self.similar_groups = _hide_fully_dismissed(similar, dismissed)
+            self.other_groups = _hide_fully_dismissed(other, dismissed)
         self.set_status(
             "grouping",
             f"Similar photo groups: {len(similar)}; other groups: {len(other)}.",
@@ -712,14 +772,22 @@ class Engine:
             exact, exact_left = _strip_groups(self.exact_groups, id_set)
             similar, similar_left = _strip_groups(self.similar_groups, id_set)
             other, other_left = _strip_groups(self.other_groups, id_set)
+            leftover_ids = exact_left | similar_left | other_left
             self.exact_groups = exact
             self.similar_groups = similar
             self.other_groups = other
-            self.dismissed_ids.update(exact_left | similar_left | other_left)
+            self.dismissed_ids.update(leftover_ids)
             self.dismissed_ids -= id_set
+            leftover_items = [self.files[i] for i in leftover_ids if i in self.files]
+        if leftover_items:
+            try:
+                self._persist_dismissed(leftover_items)
+            except sqlite3.OperationalError:
+                pass
         if paths:
             def drop() -> None:
                 self._conn.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in paths])
+                self._conn.executemany("DELETE FROM dismissed WHERE path = ?", [(p,) for p in paths])
                 self._conn.commit()
 
             try:
@@ -729,10 +797,45 @@ class Engine:
         return removed
 
     def dismiss_review(self, ids: list[int]) -> None:
-        """Keep files on disk but hide them from later review pages this session."""
+        """Keep files on disk but hide them from later review pages."""
         id_set = {int(i) for i in ids}
+        items: list[MediaFile] = []
         with self.lock:
-            self.dismissed_ids.update(i for i in id_set if i in self.files)
+            for fid in id_set:
+                item = self.files.get(fid)
+                if item is None:
+                    continue
+                self.dismissed_ids.add(fid)
+                items.append(item)
+        try:
+            self._persist_dismissed(items)
+        except sqlite3.OperationalError:
+            pass
+
+    def reset_kept(self) -> int:
+        """Clear kept/dismissed files and rebuild groups so they can be reviewed again."""
+        with self.lock:
+            cleared = len(self.dismissed_ids)
+            exact_ready = self.exact_ready
+            similar_ready = self.similar_ready
+            self.dismissed_ids.clear()
+
+        def wipe() -> None:
+            self._conn.execute("DELETE FROM dismissed")
+            self._conn.commit()
+
+        self._db_run(wipe)
+        if exact_ready:
+            self._exact_duplicates()
+        if similar_ready:
+            self._similar_groups()
+        return cleared
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except sqlite3.Error:
+            pass
 
 
 def _strip_groups(groups: list[FileGroup], removed: set[int]) -> tuple[list[FileGroup], set[int]]:
@@ -746,6 +849,12 @@ def _strip_groups(groups: list[FileGroup], removed: set[int]) -> tuple[list[File
             continue
         kept_groups.append(group)
     return kept_groups, leftovers
+
+
+def _hide_fully_dismissed(groups: list[FileGroup], dismissed: set[int]) -> list[FileGroup]:
+    if not dismissed:
+        return groups
+    return [group for group in groups if any(item.id not in dismissed for item in group.files)]
 
 
 def _exif_str(value) -> str | None:

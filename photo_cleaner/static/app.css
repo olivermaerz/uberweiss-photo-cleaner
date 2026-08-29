@@ -279,9 +279,18 @@ h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; font-weight: 600; }
   outline: none;
 }
 .page-info { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.kept {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--keep);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.kept button:disabled { opacity: 0.4; cursor: not-allowed; }
 .spacer { flex: 1; }
 .sel-count { color: var(--muted); font-size: 13px; }
-.ghost, .danger, .chip {
+.ghost, .danger, .warn, .chip {
   border: 1px solid var(--line);
   background: var(--bg-2);
   color: var(--ink);
@@ -296,6 +305,12 @@ h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; font-weight: 600; }
   color: var(--danger);
 }
 .danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.warn {
+  background: #24180c;
+  border-color: #6a4a28;
+  color: var(--shot);
+}
+.warn-note { color: var(--shot); }
 
 #board { padding: 8px 24px 40px; }
 .group {
