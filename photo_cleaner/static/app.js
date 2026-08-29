@@ -15,11 +15,11 @@ const state = {
 
 const HINTS = {
   exact:
-    "Byte-identical files. Suggested copies are safe to remove after a glance. Drag a box to select several, or click the card (not the photo). The keeper stays unless you check it.",
+    "Byte-identical files. Suggested copies are safe to remove after a glance. Drag a box to select several, or click the card (not the photo). The keeper stays unless you check it. After Trash, leftover files in those groups leave the list.",
   similar:
-    "Visually similar stills, including screenshots that match a photo. Nothing is pre-checked. Drag a box or Shift-click a range. Distance is Hamming bits from the keeper.",
+    "Visually similar stills, including screenshots that match a photo. Nothing is pre-checked. Drag a box or Shift-click a range. Distance is Hamming bits from the keeper. After Trash, leftover files in those groups leave the list.",
   other:
-    "Screenshots and other non-camera stills that are similar to each other, plus a grid of leftovers. Drag a box to select, Shift-click a range, or Select all in grid. Click a photo to zoom.",
+    "Screenshots and other non-camera stills that are similar to each other, plus a grid of leftovers. Drag a box to select, Shift-click a range, or Select all in grid. Click a photo to zoom. After Trash, leftover files in those groups or in the loaded grid leave the list.",
 };
 
 const PHASE_TO_STAGE = {
@@ -597,14 +597,22 @@ function openModal() {
   $("modal").hidden = false;
 }
 
+function leftoverBrowseIds(trashedIds) {
+  const trashed = new Set(trashedIds);
+  const browseIds = state.browse.files.map((f) => f.id);
+  if (!browseIds.some((id) => trashed.has(id))) return [];
+  return browseIds.filter((id) => !trashed.has(id));
+}
+
 async function confirmTrash() {
   const files = selectedFiles();
+  const ids = files.map((f) => f.id);
   $("modal-go").disabled = true;
   try {
     const result = await api("/api/trash", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: files.map((f) => f.id), confirm: true }),
+      body: JSON.stringify({ ids, dismiss_ids: leftoverBrowseIds(ids), confirm: true }),
     });
     for (const file of result.files || []) state.selected.delete(file.id);
     $("modal").hidden = true;

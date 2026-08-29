@@ -248,11 +248,19 @@ class CleanerHandler(BaseHTTPRequestHandler):
                 to_remove.append(fid)
             except Exception as exc:
                 errors.append({"id": fid, "path": str(item.path), "error": str(exc)})
+        raw_dismiss = body.get("dismiss_ids") or []
+        try:
+            dismiss_ids = [int(x) for x in raw_dismiss]
+        except (TypeError, ValueError):
+            self._send_json({"error": "dismiss_ids must be integers"}, 400)
+            return
         if to_remove:
             try:
                 self.engine.remove_files(to_remove)
             except sqlite3.OperationalError:
                 pass
+        if dismiss_ids:
+            self.engine.dismiss_review(dismiss_ids)
         self._send_json({"trashed": len(trashed), "files": trashed, "errors": errors})
 
     def _handle_reveal(self, body: dict) -> None:
